@@ -164,7 +164,7 @@ async function analyzeStyleFromImage(base64) {
             role: 'user',
             content: [
                 { type: 'image_url', image_url: { url: 'data:image/png;base64,' + base64 } },
-                { type: 'text', text: 'Analyze the artistic style of this image in detail. Describe the color palette, lighting, texture, composition, mood, and any notable artistic techniques. Write a single cohesive paragraph that could be used as a style description for generating similar images. Output ONLY the style description.' },
+                { type: 'text', text: 'Analyze the artistic rendering style of this image — only HOW it is drawn/rendered, NOT what is depicted. Output a short comma-separated style description (20-35 words) combining the most distinctive visual traits, in this format: [medium] style, [key technique], [palette], [lighting], [standout detail]. Example: high-fidelity digital anime illustration, soft cel-shading with thick lineart, deep teal-and-gold palette, dramatic volumetric top-lighting, intricate hair and fabric detail. Output ONLY the style description.' },
             ],
         }],
         max_tokens: 300,
