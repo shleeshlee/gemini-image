@@ -145,7 +145,7 @@ async function optimizePrompt(prompt) {
         messages: [
             {
                 role: 'system',
-                content: 'You are an image prompt optimizer. Rewrite the user\'s image description as a detailed, vivid narrative paragraph optimized for AI image generation. Keep the core intent but add rich visual details, lighting, composition, and atmosphere. Output ONLY the optimized prompt, no explanations.',
+                content: 'You are an image prompt optimizer for Google Gemini. Expand the user\'s brief description into a vivid scene description. ONLY enrich the CONTENT: subject, action, pose, expression, clothing, environment, spatial relationships, textures, materials, weather, time of day. Do NOT specify art style, rendering technique, camera/lens, lighting technique, color palette, or quality boosters — these are controlled separately. 100 words max. Output ONLY the optimized prompt.',
             },
             { role: 'user', content: prompt },
         ],
@@ -186,20 +186,24 @@ async function generateImage(prompt) {
         }
     }
 
-    // 风格拼入 prompt（和旧版一致，效果比传 style 参数好）
+    // 风格 U 型拼接：风格 + 内容 + 风格（前后包夹提升遵从度）
     let finalPrompt = prompt;
     const styleKey = settings.style;
+    let styleDesc = '';
     if (styleKey !== 'none') {
         if (styleKey.startsWith('custom:')) {
             const customName = styleKey.replace('custom:', '');
             const found = (settings.custom_styles || []).find(cs => cs.name === customName);
-            if (found) finalPrompt = found.description + ' style, ' + finalPrompt;
+            if (found) styleDesc = found.description + ' style';
         } else {
-            finalPrompt = styleKey + ' style, ' + finalPrompt;
+            styleDesc = styleKey + ' style';
         }
     }
     if (settings.custom_style) {
-        finalPrompt = finalPrompt + ', ' + settings.custom_style;
+        styleDesc = styleDesc ? styleDesc + ', ' + settings.custom_style : settings.custom_style;
+    }
+    if (styleDesc) {
+        finalPrompt = styleDesc + ', ' + finalPrompt + '. ' + styleDesc;
     }
     // 比例拼入 prompt
     if (settings.ratio !== '1024x1024') {
