@@ -1,0 +1,39 @@
+#gemini-image-settings .gi-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+#gemini-image-settings .gi-row label {
+    min-width: 80px;
+    font-size: 0.9em;
+}
+#gemini-image-settings .gi-row input[type="text"],
+#gemini-image-settings .gi-row input[type="password"] {
+    flex: 1;
+}
+#gemini-image-settings .gi-status {
+    font-size: 0.85em;
+    padding: 4px 8px;
+    border-radius: 6px;
+    margin-top: 4px;
+}
+#gemini-image-settings .gi-status.ok { color: #2d7a52; background: #d4f0e1; }
+#gemini-image-settings .gi-status.err { color: #b94a4a; background: #ffd4d4; }
+#gemini-image-settings .menu_button { min-width: 120px; white-space: nowrap; }
+#gemini-image-settings select.text_pole { flex: 1; }
+#gemini-image-settings .gi-section { margin-top: 6px; }
+#gemini-image-settings .gi-section summary { cursor: pointer; font-size: 0.85em; color: #888; }
+#gemini-image-settings .gi-section[open] summary { margin-bottom: 6px; }
+#gemini-image-settings .gi-checkbox-label { display: flex; align-items: center; gap: 4px; }
+#gemini-image-settings textarea.text_pole { margin-top: 4px; }
+
+.gi-image-block { position: relative; margin-top: 8px; display: inline-block; max-width: 100%; }
+.gi-image-block .gi-generated-img { max-width: 100%; border-radius: 8px; cursor: pointer; display: block; }
+.gi-image-toolbar { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s; }
+.gi-image-block:hover .gi-image-toolbar { opacity: 1; }
+.gi-img-btn { background: rgba(0,0,0,0.6); color: #fff; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 14px; }
+.gi-img-btn:hover { background: rgba(0,0,0,0.85); }
+
+.gi-lightbox { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 99999; cursor: zoom-out; }
+.gi-lightbox img { max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 4px; }
