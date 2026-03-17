@@ -558,18 +558,19 @@ jQuery(async () => {
 
         console.log('[gemini-image] Loaded OK');
 
-        let lastLen = 0;
+        // 初始化时记住当前长度，不给历史消息生图
+        let lastLen = getContext().chat?.length || 0;
         let lastSwipeIds = {};
 
         setInterval(() => {
             const settings = s();
             const ctx = getContext();
 
-            // 自动生图
+            // 自动生图：只对新增的 AI 回复触发（+1 才是真正的新消息，跳跃说明切了角色）
             if (settings.enabled && settings.auto_generate && settings.api_url && settings.api_key) {
-                if (ctx.chat.length > lastLen && ctx.chat.length > 0) {
+                if (ctx.chat.length === lastLen + 1) {
                     const last = ctx.chat[ctx.chat.length - 1];
-                    if (!last.is_user && !hasImageForCurrentSwipe(last)) { lastLen = ctx.chat.length; generateAndAttach(ctx.chat.length - 1); }
+                    if (!last.is_user && !hasImageForCurrentSwipe(last)) { generateAndAttach(ctx.chat.length - 1); }
                 }
             }
             lastLen = ctx.chat.length;
