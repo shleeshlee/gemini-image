@@ -329,6 +329,22 @@ function hasImageForCurrentSwipe(message) {
     return !!message.extra.gemini_images[swipeId];
 }
 
+function _getMsgStatus(messageIndex) {
+    const mesEl = $(".mes[mesid=\"" + messageIndex + "\"]");
+    if (!mesEl.length) return null;
+    let tag = mesEl.find('.gi-msg-status');
+    if (!tag.length) {
+        tag = $('<div class="gi-msg-status"></div>');
+        mesEl.find('.mes_text').after(tag);
+    }
+    return tag;
+}
+
+function _setMsgStatus(messageIndex, cls, html) {
+    const tag = _getMsgStatus(messageIndex);
+    if (tag) tag.attr('class', 'gi-msg-status ' + cls).html(html);
+}
+
 async function generateAndAttach(messageIndex) {
     const context = getContext();
     const message = context.chat[messageIndex];
@@ -347,10 +363,16 @@ async function generateAndAttach(messageIndex) {
 
         const sceneText = message.mes.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
         if (sceneText.length < 10) return;
+        _setMsgStatus(messageIndex, 'pending', '🔍 提取关键词...');
         setStatus('', '🔍 #' + messageIndex + ' 提取关键词...');
         const keywords = await extractKeywords(sceneText);
-        if (!keywords || keywords.length < 5) { setStatus('err', '#' + messageIndex + ' 关键词提取失败'); return; }
-        setStatus('', '🍪 #' + messageIndex + ' 生成图片中...（' + keywords.slice(0, 60) + '...）');
+        if (!keywords || keywords.length < 5) {
+            _setMsgStatus(messageIndex, 'err', '✗ 关键词提取失败 <span class="gi-retry" data-idx="' + messageIndex + '">🔄 重试</span>');
+            setStatus('err', '#' + messageIndex + ' 关键词提取失败');
+            return;
+        }
+        _setMsgStatus(messageIndex, 'pending', '🍪 生成图片中...');
+        setStatus('', '🍪 #' + messageIndex + ' 生成图片中...');
         const { b64, prompt, finalPrompt } = await generateImage(keywords);
 
         // 按 swipe_id 存图，每个 swipe 绑定自己的图
@@ -360,10 +382,15 @@ async function generateAndAttach(messageIndex) {
         message.extra.gemini_images[swipeId] = { b64, prompt, finalPrompt };
 
         renderGeminiImage(messageIndex);
+        _setMsgStatus(messageIndex, '', '');  // 成功了就清掉状态，图片本身就是反馈
         await context.saveChat();
-        setStatus('ok', '✓ 已生成 (' + prompt.slice(0, 50) + '...)');
+        setStatus('ok', '✓ #' + messageIndex + ' 已生成');
         setTimeout(() => setStatus('', ''), 5000);
-    } catch (e) { console.error('[gemini-image]', e); setStatus('err', '#' + messageIndex + ' ' + e.message); }
+    } catch (e) {
+        console.error('[gemini-image]', e);
+        _setMsgStatus(messageIndex, 'err', '✗ ' + e.message.slice(0, 60) + ' <span class="gi-retry" data-idx="' + messageIndex + '">🔄 重试</span>');
+        setStatus('err', '#' + messageIndex + ' ' + e.message);
+    }
     finally { _pendingGens.delete(messageIndex); }
 }
 
@@ -519,6 +546,16 @@ jQuery(async () => {
         console.log('[gemini-image] Loading...');
         loadSettings();
         buildSettingsHtml();
+
+        // 重试按钮：点击消息上的 🔄 重新生图
+        $(document).on('click', '.gi-retry', function () {
+            const idx = parseInt($(this).data('idx'));
+            if (!isNaN(idx)) {
+                _pendingGens.delete(idx);  // 允许重新触发
+                generateAndAttach(idx);
+            }
+        });
+
         console.log('[gemini-image] Loaded OK');
 
         let lastLen = 0;
