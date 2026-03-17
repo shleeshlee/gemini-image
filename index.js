@@ -46,6 +46,10 @@ const STYLES = {
     'ASMR Apple': 'ASMR Apple / ASMR 微距',
     'Red Carpet': 'Red Carpet / 红毯',
     'Popcorn': 'Popcorn / 爆米花',
+    'Otome CG': 'Otome CG / 乙女CG',
+    'Fantasy Anime': 'Fantasy Anime / 幻想动漫',
+    'Shinkai': 'Shinkai / 新海诚',
+    'Soft Anime': 'Soft Anime / 柔和动漫',
 };
 
 const RATIOS = {
@@ -192,29 +196,10 @@ async function generateImage(prompt) {
         }
     }
 
-    // 风格 U 型拼接：风格 + 内容 + 风格（前后包夹提升遵从度）
+    // 风格交给后端 prefix/suffix 处理，自定义风格追加到 prompt
     let finalPrompt = prompt;
-    const styleKey = settings.style;
-    let styleDesc = '';
-    if (styleKey !== 'none') {
-        if (styleKey.startsWith('custom:')) {
-            const customName = styleKey.replace('custom:', '');
-            const found = (settings.custom_styles || []).find(cs => cs.name === customName);
-            if (found) styleDesc = found.description + ' style';
-        } else {
-            styleDesc = styleKey + ' style';
-        }
-    }
     if (settings.custom_style) {
-        styleDesc = styleDesc ? styleDesc + ', ' + settings.custom_style : settings.custom_style;
-    }
-    if (styleDesc) {
-        finalPrompt = styleDesc + ', ' + finalPrompt + '. ' + styleDesc;
-    }
-    // 比例拼入 prompt
-    if (settings.ratio !== '1024x1024') {
-        const ratioLabel = RATIOS[settings.ratio] || settings.ratio;
-        finalPrompt = finalPrompt + ', aspect ratio ' + ratioLabel.split(' ')[0];
+        finalPrompt = finalPrompt + ', ' + settings.custom_style;
     }
 
     const body = {
@@ -222,7 +207,22 @@ async function generateImage(prompt) {
         model: getModel('image'),
         n: 1,
         quality: settings.quality,
+        size: settings.ratio,
     };
+
+    // 内置风格通过 style 字段传给后端（后端做 prefix/suffix 包装）
+    const styleKey = settings.style;
+    if (styleKey !== 'none') {
+        if (styleKey.startsWith('custom:')) {
+            // 自定义风格：提取描述拼入 prompt（后端没有这个模板）
+            const customName = styleKey.replace('custom:', '');
+            const found = (settings.custom_styles || []).find(cs => cs.name === customName);
+            if (found) finalPrompt = found.description + ', ' + finalPrompt;
+            body.prompt = finalPrompt;
+        } else {
+            body.style = styleKey;
+        }
+    }
 
     const data = await gatewayFetch('/v1/images/generations', body);
 
@@ -285,7 +285,17 @@ function renderGeminiImage(messageIndex) {
     dlBtn.on('click', (e) => { e.stopPropagation(); downloadB64(imgData.b64); });
     const regenBtn = $('<button class="gi-img-btn" title="重新生图"><i class="fa-solid fa-arrows-rotate"></i></button>');
     regenBtn.on('click', (e) => { e.stopPropagation(); generateAndAttach(messageIndex); });
-    toolbar.append(zoomBtn).append(dlBtn).append(regenBtn);
+    const delBtn = $('<button class="gi-img-btn" title="删除图片"><i class="fa-solid fa-trash"></i></button>');
+    delBtn.on('click', (e) => {
+        e.stopPropagation();
+        const swipeId = message.swipe_id || 0;
+        if (message.extra?.gemini_images?.[swipeId]) {
+            delete message.extra.gemini_images[swipeId];
+            mesEl.find('.gi-image-block').remove();
+            getContext().saveChat();
+        }
+    });
+    toolbar.append(zoomBtn).append(dlBtn).append(regenBtn).append(delBtn);
 
     block.append(img).append(toolbar);
     mesEl.find('.mes_text').after(block);
