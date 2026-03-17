@@ -556,6 +556,17 @@ jQuery(async () => {
             }
         });
 
+        // 自动拉取模型列表（有缓存就先用缓存，后台静默刷新）
+        const settings = s();
+        if (settings._cached_models?.length) populateModelSelects(settings._cached_models);
+        if (settings.api_url && settings.api_key) {
+            fetchModels().then(models => {
+                settings._cached_models = models;
+                saveSettingsDebounced();
+                populateModelSelects(models);
+            }).catch(() => {});
+        }
+
         console.log('[gemini-image] Loaded OK');
 
         // 初始化时记住当前长度，不给历史消息生图
