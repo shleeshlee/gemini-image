@@ -91,6 +91,12 @@ function loadSettings() {
 
 function s() { return extension_settings[EXT_NAME]; }
 
+function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str || '';
+    return d.innerHTML;
+}
+
 function getModel(purpose) {
     const settings = s();
     const explicit = purpose === 'prompt' ? settings.prompt_model : settings.image_model;
@@ -359,8 +365,8 @@ function buildSettingsHtml() {
             '<div class="gi-row"><label>启用</label><input id="gi-enabled" type="checkbox"' + (settings.enabled ? ' checked' : '') + ' /></div>' +
 
             '<details class="gi-section"><summary>渠道设置</summary>' +
-                '<div class="gi-row"><label>Gateway</label><input id="gi-api-url" type="text" class="text_pole" value="' + (settings.api_url || '') + '" placeholder="https://example.com" /></div>' +
-                '<div class="gi-row"><label>密钥</label><input id="gi-api-key" type="password" class="text_pole" value="' + (settings.api_key || '') + '" placeholder="API Key 或面板密码" /></div>' +
+                '<div class="gi-row"><label>Gateway</label><input id="gi-api-url" type="text" class="text_pole" value="' + esc(settings.api_url) + '" placeholder="https://example.com" /></div>' +
+                '<div class="gi-row"><label>密钥</label><input id="gi-api-key" type="password" class="text_pole" value="' + esc(settings.api_key) + '" placeholder="API Key 或面板密码" /></div>' +
                 '<div class="gi-row" style="margin-top:4px"><button id="gi-fetch-models" class="menu_button"><i class="fa-solid fa-arrows-rotate"></i> 拉取模型</button></div>' +
                 '<div class="gi-row"><label>Prompt 模型</label><select id="gi-prompt-model" class="text_pole"><option value="">自动（gemini-3.0-flash）</option></select></div>' +
                 '<div class="gi-row"><label>图像模型</label><select id="gi-image-model" class="text_pole"><option value="">自动（gemini-3.0-flash）</option></select></div>' +
@@ -370,7 +376,7 @@ function buildSettingsHtml() {
             '<div class="gi-row"><label>风格</label><select id="gi-style" class="text_pole"></select></div>' +
             '<div class="gi-row"><label>比例</label><select id="gi-ratio" class="text_pole">' + ratioOpts + '</select></div>' +
             '<div class="gi-row"><label>质量</label><select id="gi-quality" class="text_pole">' + qualityOpts + '</select></div>' +
-            '<div class="gi-row"><label>自定义风格</label><input id="gi-custom-style" type="text" class="text_pole" value="' + (settings.custom_style || '') + '" placeholder="soft lighting, pastel colors" /></div>' +
+            '<div class="gi-row"><label>自定义风格</label><input id="gi-custom-style" type="text" class="text_pole" value="' + esc(settings.custom_style) + '" placeholder="soft lighting, pastel colors" /></div>' +
 
             '<hr>' +
             '<div class="gi-row"><label class="gi-checkbox-label"><input id="gi-optimize-prompt" type="checkbox"' + (settings.optimize_prompt ? ' checked' : '') + ' /> Prompt 优化</label><small>关键词→叙述式段落，更慢但更细腻</small></div>' +
@@ -385,7 +391,7 @@ function buildSettingsHtml() {
             '</details>' +
 
             '<details class="gi-section"><summary>提取提示词（高级）</summary>' +
-                '<textarea id="gi-extract-prompt" class="text_pole" rows="4" style="margin-top:4px;font-size:0.82em">' + settings.extract_prompt + '</textarea>' +
+                '<textarea id="gi-extract-prompt" class="text_pole" rows="4" style="margin-top:4px;font-size:0.82em">' + esc(settings.extract_prompt) + '</textarea>' +
             '</details>' +
 
             '<div class="gi-row" style="margin-top:8px">' +
@@ -493,14 +499,15 @@ jQuery(async () => {
             }
             lastLen = ctx.chat.length;
 
-            // swipe 切换检测：swipe_id 变了就重新渲染对应的图
-            for (let i = 0; i < ctx.chat.length; i++) {
-                const msg = ctx.chat[i];
+            // swipe 切换检测：只查最后一条，避免长聊天遍历开销
+            if (ctx.chat.length > 0) {
+                const lastIdx = ctx.chat.length - 1;
+                const msg = ctx.chat[lastIdx];
                 const curSwipe = msg.swipe_id || 0;
-                if (lastSwipeIds[i] !== undefined && lastSwipeIds[i] !== curSwipe) {
-                    renderGeminiImage(i);
+                if (lastSwipeIds[lastIdx] !== undefined && lastSwipeIds[lastIdx] !== curSwipe) {
+                    renderGeminiImage(lastIdx);
                 }
-                lastSwipeIds[i] = curSwipe;
+                lastSwipeIds[lastIdx] = curSwipe;
             }
         }, 1000);
 
@@ -522,6 +529,13 @@ jQuery(async () => {
                 if (ctx.chat.length > 0) renderGeminiImage(ctx.chat.length - 1);
             }, 300);
         });
+
+        // 切换聊天时重渲染所有图片
+        const observer = new MutationObserver(() => {
+            setTimeout(renderAllImages, 500);
+        });
+        const chatEl = document.getElementById('chat');
+        if (chatEl) observer.observe(chatEl, { childList: true });
 
     } catch (e) { console.error('[gemini-image] Init failed:', e); }
 });
