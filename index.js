@@ -3,8 +3,8 @@ import { saveSettingsDebounced } from '../../../../script.js';
 
 const EXT_NAME = 'gemini-image';
 
-// 生图请求控制：新请求取消前一个
-let _currentAbort = null;
+// 生图并发控制：每个 messageIndex 只允许一个请求
+const _pendingGens = new Set();
 
 const STYLES = {
     'none': '无风格（原始提示词）',
@@ -140,7 +140,7 @@ async function fetchModels() {
     return (data.data || []).map(m => m.id);
 }
 
-async function extractKeywords(sceneText, signal) {
+async function extractKeywords(sceneText) {
     const settings = s();
     const prompt = settings.extract_prompt.replace('{{text}}', sceneText.slice(-800));
     const data = await gatewayFetch('/v1/chat/completions', {
@@ -148,7 +148,7 @@ async function extractKeywords(sceneText, signal) {
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 200,
         temperature: 0.3,
-    }, signal);
+    });
     let keywords = data.choices?.[0]?.message?.content || '';
     keywords = keywords.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     return keywords;
@@ -190,7 +190,7 @@ async function analyzeStyleFromImage(base64) {
     return result;
 }
 
-async function generateImage(prompt, signal) {
+async function generateImage(prompt) {
     const settings = s();
 
     if (settings.optimize_prompt) {
@@ -229,7 +229,7 @@ async function generateImage(prompt, signal) {
         }
     }
 
-    const data = await gatewayFetch('/v1/images/generations', body, signal);
+    const data = await gatewayFetch('/v1/images/generations', body);
 
     if (data.error) {
         throw new Error(data.error.message || 'Gateway returned an error');
@@ -333,17 +333,13 @@ async function generateAndAttach(messageIndex) {
     const context = getContext();
     const message = context.chat[messageIndex];
     if (!message || message.is_user) return;
+
+    // 同一条消息不重复生图
+    if (_pendingGens.has(messageIndex)) return;
+    _pendingGens.add(messageIndex);
+
     const statusEl = document.getElementById('gi-status');
     const setStatus = (cls, msg) => { if (statusEl) { statusEl.className = 'gi-status ' + cls; statusEl.textContent = msg; } };
-
-    // 取消前一个还在跑的请求
-    if (_currentAbort) {
-        _currentAbort.abort();
-        _currentAbort = null;
-    }
-    const abortCtrl = new AbortController();
-    _currentAbort = abortCtrl;
-
     try {
         // 先删掉当前图，让用户知道在重新生成
         const mesEl = $(".mes[mesid=\"" + messageIndex + "\"]");
@@ -351,13 +347,11 @@ async function generateAndAttach(messageIndex) {
 
         const sceneText = message.mes.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
         if (sceneText.length < 10) return;
-        setStatus('', '🔍 提取关键词中...');
-        const keywords = await extractKeywords(sceneText, abortCtrl.signal);
-        if (abortCtrl.signal.aborted) return;
-        if (!keywords || keywords.length < 5) { setStatus('err', '关键词提取失败'); return; }
-        setStatus('', '🍪 生成图片中...（' + keywords.slice(0, 60) + '...）');
-        const { b64, prompt, finalPrompt } = await generateImage(keywords, abortCtrl.signal);
-        if (abortCtrl.signal.aborted) return;
+        setStatus('', '🔍 #' + messageIndex + ' 提取关键词...');
+        const keywords = await extractKeywords(sceneText);
+        if (!keywords || keywords.length < 5) { setStatus('err', '#' + messageIndex + ' 关键词提取失败'); return; }
+        setStatus('', '🍪 #' + messageIndex + ' 生成图片中...（' + keywords.slice(0, 60) + '...）');
+        const { b64, prompt, finalPrompt } = await generateImage(keywords);
 
         // 按 swipe_id 存图，每个 swipe 绑定自己的图
         if (!message.extra) message.extra = {};
@@ -369,12 +363,8 @@ async function generateAndAttach(messageIndex) {
         await context.saveChat();
         setStatus('ok', '✓ 已生成 (' + prompt.slice(0, 50) + '...)');
         setTimeout(() => setStatus('', ''), 5000);
-    } catch (e) {
-        if (e.name === 'AbortError') { setStatus('', '⏭ 新消息到了，跳过上一张'); return; }
-        console.error('[gemini-image]', e); setStatus('err', e.message);
-    } finally {
-        if (_currentAbort === abortCtrl) _currentAbort = null;
-    }
+    } catch (e) { console.error('[gemini-image]', e); setStatus('err', '#' + messageIndex + ' ' + e.message); }
+    finally { _pendingGens.delete(messageIndex); }
 }
 
 function setStatusMsg(cls, msg) {
