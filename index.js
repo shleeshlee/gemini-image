@@ -296,8 +296,13 @@ function renderGeminiImage(messageIndex) {
             'border-radius': '6px', 'font-size': '0.72em', 'line-height': '1.4',
             'white-space': 'pre-wrap', 'word-break': 'break-all', 'max-height': '100px',
             'overflow-y': 'auto', 'border': '1px solid rgba(0,0,0,0.1)',
+            'user-select': 'text', 'cursor': 'text',
         });
-        block.append(pre);
+        const copyBtn = $('<button class="gi-img-btn" style="font-size:0.68em;margin-top:4px">📋 复制</button>');
+        copyBtn.on('click', (ev) => { ev.stopPropagation(); navigator.clipboard.writeText(text); });
+        const wrapper = $('<div class="gi-prompt-preview"></div>');
+        wrapper.append(pre).append(copyBtn);
+        block.append(wrapper);
     });
     const delBtn = $('<button class="gi-img-btn" title="删除图片"><i class="fa-solid fa-trash"></i></button>');
     delBtn.on('click', (e) => {
