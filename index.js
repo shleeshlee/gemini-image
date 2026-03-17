@@ -232,7 +232,7 @@ async function generateImage(prompt) {
     if (!data.data?.[0]?.b64_json) {
         throw new Error('No image data in response');
     }
-    return { b64: data.data[0].b64_json, prompt: finalPrompt };
+    return { b64: data.data[0].b64_json, prompt: finalPrompt, finalPrompt: data.final_prompt || finalPrompt };
 }
 
 function downloadB64(b64) {
@@ -285,6 +285,20 @@ function renderGeminiImage(messageIndex) {
     dlBtn.on('click', (e) => { e.stopPropagation(); downloadB64(imgData.b64); });
     const regenBtn = $('<button class="gi-img-btn" title="重新生图"><i class="fa-solid fa-arrows-rotate"></i></button>');
     regenBtn.on('click', (e) => { e.stopPropagation(); generateAndAttach(messageIndex); });
+    const promptBtn = $('<button class="gi-img-btn" title="查看提示词"><i class="fa-solid fa-file-lines"></i></button>');
+    promptBtn.on('click', (e) => {
+        e.stopPropagation();
+        const text = imgData.finalPrompt || imgData.prompt || '无提示词信息';
+        const existing = block.find('.gi-prompt-preview');
+        if (existing.length) { existing.toggle(); return; }
+        const pre = $('<pre class="gi-prompt-preview"></pre>').text(text).css({
+            'margin-top': '6px', 'padding': '8px', 'background': 'rgba(0,0,0,0.05)',
+            'border-radius': '6px', 'font-size': '0.72em', 'line-height': '1.4',
+            'white-space': 'pre-wrap', 'word-break': 'break-all', 'max-height': '100px',
+            'overflow-y': 'auto', 'border': '1px solid rgba(0,0,0,0.1)',
+        });
+        block.append(pre);
+    });
     const delBtn = $('<button class="gi-img-btn" title="删除图片"><i class="fa-solid fa-trash"></i></button>');
     delBtn.on('click', (e) => {
         e.stopPropagation();
@@ -295,7 +309,7 @@ function renderGeminiImage(messageIndex) {
             getContext().saveChat();
         }
     });
-    toolbar.append(zoomBtn).append(dlBtn).append(regenBtn).append(delBtn);
+    toolbar.append(zoomBtn).append(dlBtn).append(promptBtn).append(regenBtn).append(delBtn);
 
     block.append(img).append(toolbar);
     mesEl.find('.mes_text').after(block);
@@ -324,13 +338,13 @@ async function generateAndAttach(messageIndex) {
         const keywords = await extractKeywords(sceneText);
         if (!keywords || keywords.length < 5) { setStatus('err', '关键词提取失败'); return; }
         setStatus('', '🍪 生成图片中...（' + keywords.slice(0, 60) + '...）');
-        const { b64, prompt } = await generateImage(keywords);
+        const { b64, prompt, finalPrompt } = await generateImage(keywords);
 
         // 按 swipe_id 存图，每个 swipe 绑定自己的图
         if (!message.extra) message.extra = {};
         if (!message.extra.gemini_images) message.extra.gemini_images = {};
         const swipeId = message.swipe_id || 0;
-        message.extra.gemini_images[swipeId] = { b64, prompt };
+        message.extra.gemini_images[swipeId] = { b64, prompt, finalPrompt };
 
         renderGeminiImage(messageIndex);
         await context.saveChat();
