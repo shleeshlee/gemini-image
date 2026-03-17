@@ -68,10 +68,19 @@ const QUALITY_OPTIONS = {
     'hd': 'HD 高清',
 };
 
+const CHANNEL_DEFAULTS = {
+    gemini: { prompt_model: '', image_model: '', default_prompt_model: 'gemini-3.0-flash', default_image_model: 'gemini-3.0-flash' },
+    grok:   { prompt_model: '', image_model: '', default_prompt_model: 'grok-3', default_image_model: 'grok-imagine-1.0' },
+};
+
 const defaultSettings = {
     enabled: false,
-    api_url: '',
-    api_key: '',
+    channel: 'gemini',
+    // 每个渠道独立存储 URL/Key/模型
+    channels: {
+        gemini: { api_url: '', api_key: '', prompt_model: '', image_model: '' },
+        grok:   { api_url: '', api_key: '', prompt_model: '', image_model: '' },
+    },
     auto_generate: false,
     style: 'none',
     ratio: '1024x1024',
@@ -79,8 +88,7 @@ const defaultSettings = {
     custom_style: '',
     custom_styles: [],
     optimize_prompt: false,
-    prompt_model: '',
-    image_model: '',
+    image_guide: '',
     extract_prompt: 'Based on the following story/dialogue scene, extract key visual elements for image generation. Output a concise English image prompt (max 150 words) describing the scene, characters, actions, and environment. Focus on visual details only.\n\nScene:\n{{text}}\n\nImage prompt:',
 };
 
@@ -88,15 +96,33 @@ function loadSettings() {
     extension_settings[EXT_NAME] = extension_settings[EXT_NAME] || {};
     for (const [key, val] of Object.entries(defaultSettings)) {
         if (extension_settings[EXT_NAME][key] === undefined) {
-            extension_settings[EXT_NAME][key] = val;
+            extension_settings[EXT_NAME][key] = typeof val === 'object' && !Array.isArray(val) ? JSON.parse(JSON.stringify(val)) : val;
         }
     }
+    // 迁移旧版单渠道配置
+    const st = extension_settings[EXT_NAME];
+    if (st.api_url && !st.channels?.gemini?.api_url) {
+        if (!st.channels) st.channels = JSON.parse(JSON.stringify(defaultSettings.channels));
+        st.channels.gemini.api_url = st.api_url;
+        st.channels.gemini.api_key = st.api_key || '';
+        st.channels.gemini.prompt_model = st.prompt_model || '';
+        st.channels.gemini.image_model = st.image_model || '';
+        delete st.api_url; delete st.api_key; delete st.prompt_model; delete st.image_model;
+    }
+    if (!st.channels) st.channels = JSON.parse(JSON.stringify(defaultSettings.channels));
+    for (const ch of ['gemini', 'grok']) {
+        if (!st.channels[ch]) st.channels[ch] = { api_url: '', api_key: '', prompt_model: '', image_model: '' };
+    }
+    if (!st.channel) st.channel = 'gemini';
     const ratioMap = { '1:1': '1024x1024', '16:9': '1280x720', '9:16': '720x1280', '3:2': '1792x1024', '2:3': '1024x1792' };
-    const cur = extension_settings[EXT_NAME].ratio;
-    if (ratioMap[cur]) extension_settings[EXT_NAME].ratio = ratioMap[cur];
+    const cur = st.ratio;
+    if (ratioMap[cur]) st.ratio = ratioMap[cur];
 }
 
 function s() { return extension_settings[EXT_NAME]; }
+
+/** 当前渠道配置 */
+function ch() { const st = s(); return st.channels[st.channel] || st.channels.gemini; }
 
 function esc(str) {
     const d = document.createElement('div');
@@ -106,17 +132,53 @@ function esc(str) {
 
 function getModel(purpose) {
     const settings = s();
-    const explicit = purpose === 'prompt' ? settings.prompt_model : settings.image_model;
-    const base = explicit || 'gemini-3.0-flash';
-    return base;
+    const chConf = ch();
+    const defaults = CHANNEL_DEFAULTS[settings.channel] || CHANNEL_DEFAULTS.gemini;
+    const explicit = purpose === 'prompt' ? chConf.prompt_model : chConf.image_model;
+    return explicit || (purpose === 'prompt' ? defaults.default_prompt_model : defaults.default_image_model);
+}
+
+/** 解析 SSE 流，收集完整文本（grok2api chat/completions 始终返回 SSE） */
+async function parseSSEResponse(resp) {
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullContent = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // 保留未完成的行
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith('data:')) continue;
+            const data = trimmed.slice(5).trim();
+            if (data === '[DONE]') continue;
+            try {
+                const parsed = JSON.parse(data);
+                // 标准 chat completions SSE: choices[0].delta.content
+                const delta = parsed.choices?.[0]?.delta?.content;
+                if (delta) fullContent += delta;
+                // 也尝试非流式格式（某些情况）
+                const msg = parsed.choices?.[0]?.message?.content;
+                if (msg) fullContent = msg;
+            } catch { /* 跳过无法解析的行 */ }
+        }
+    }
+    return { choices: [{ message: { content: fullContent } }] };
 }
 
 async function gatewayFetch(path, body, signal) {
     const settings = s();
-    const url = settings.api_url.replace(/\/+$/, '') + path;
+    const chConf = ch();
+    const url = chConf.api_url.replace(/\/+$/, '') + path;
     const opts = {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.api_key },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + chConf.api_key },
         body: JSON.stringify(body),
     };
     if (signal) opts.signal = signal;
@@ -125,15 +187,21 @@ async function gatewayFetch(path, body, signal) {
         const text = await resp.text();
         throw new Error(resp.status + ' ' + text.slice(0, 200));
     }
+
+    // Grok 的 chat/completions 始终返回 SSE，需要流式解析
+    const ct = (resp.headers.get('content-type') || '').toLowerCase();
+    if (ct.includes('text/event-stream')) {
+        return parseSSEResponse(resp);
+    }
     return resp.json();
 }
 
 async function fetchModels() {
-    const settings = s();
-    const url = settings.api_url.replace(/\/+$/, '') + '/v1/models';
+    const chConf = ch();
+    const url = chConf.api_url.replace(/\/+$/, '') + '/v1/models';
     const resp = await fetch(url, {
         method: 'GET',
-        headers: { 'Authorization': 'Bearer ' + settings.api_key },
+        headers: { 'Authorization': 'Bearer ' + chConf.api_key },
     });
     if (!resp.ok) throw new Error('Failed to fetch models: ' + resp.status);
     const data = await resp.json();
@@ -201,8 +269,21 @@ async function generateImage(prompt) {
         }
     }
 
-    // 风格交给后端 prefix/suffix 处理，自定义风格追加到 prompt
+    // 用户自定义引导词（拼在 prompt 前面）
     let finalPrompt = prompt;
+    if (settings.image_guide?.trim()) {
+        finalPrompt = settings.image_guide.trim() + '\n\n' + finalPrompt;
+    }
+
+    // 风格处理
+    const styleKey = settings.style;
+    if (styleKey !== 'none') {
+        if (styleKey.startsWith('custom:')) {
+            const customName = styleKey.replace('custom:', '');
+            const found = (settings.custom_styles || []).find(cs => cs.name === customName);
+            if (found) finalPrompt = found.description + ', ' + finalPrompt;
+        }
+    }
     if (settings.custom_style) {
         finalPrompt = finalPrompt + ', ' + settings.custom_style;
     }
@@ -213,20 +294,12 @@ async function generateImage(prompt) {
         n: 1,
         quality: settings.quality,
         size: settings.ratio,
+        response_format: 'b64_json',
     };
 
-    // 内置风格通过 style 字段传给后端（后端做 prefix/suffix 包装）
-    const styleKey = settings.style;
-    if (styleKey !== 'none') {
-        if (styleKey.startsWith('custom:')) {
-            // 自定义风格：提取描述拼入 prompt（后端没有这个模板）
-            const customName = styleKey.replace('custom:', '');
-            const found = (settings.custom_styles || []).find(cs => cs.name === customName);
-            if (found) finalPrompt = found.description + ', ' + finalPrompt;
-            body.prompt = finalPrompt;
-        } else {
-            body.style = styleKey;
-        }
+    // 内置风格通过 style 字段传给后端
+    if (styleKey !== 'none' && !styleKey.startsWith('custom:')) {
+        body.style = styleKey;
     }
 
     const data = await gatewayFetch('/v1/images/generations', body);
@@ -410,15 +483,36 @@ function populateStyleSelect() {
 }
 
 function populateModelSelects(models) {
-    for (const id of ['#gi-prompt-model', '#gi-image-model']) {
+    const settings = s();
+    const defaults = CHANNEL_DEFAULTS[settings.channel] || CHANNEL_DEFAULTS.gemini;
+    for (const [id, purpose] of [['#gi-prompt-model', 'prompt'], ['#gi-image-model', 'image']]) {
         const $sel = $(id);
         const cur = $sel.val();
-        $sel.html('<option value="">自动（gemini-3.0-flash）</option>' + models.map(m => '<option value="' + m + '"' + (cur === m ? ' selected' : '') + '>' + m + '</option>').join(''));
+        const defModel = purpose === 'prompt' ? defaults.default_prompt_model : defaults.default_image_model;
+        $sel.html('<option value="">自动（' + defModel + '）</option>' + models.map(m => '<option value="' + m + '"' + (cur === m ? ' selected' : '') + '>' + m + '</option>').join(''));
+    }
+}
+
+/** 刷新渠道设置区的表单值 */
+function refreshChannelUI() {
+    const settings = s();
+    const chConf = ch();
+    const defaults = CHANNEL_DEFAULTS[settings.channel] || CHANNEL_DEFAULTS.gemini;
+    $('#gi-api-url').val(chConf.api_url);
+    $('#gi-api-key').val(chConf.api_key);
+    $('#gi-prompt-model').val(chConf.prompt_model);
+    $('#gi-image-model').val(chConf.image_model);
+    // 更新模型下拉默认提示
+    for (const [id, purpose] of [['#gi-prompt-model', 'prompt'], ['#gi-image-model', 'image']]) {
+        const defModel = purpose === 'prompt' ? defaults.default_prompt_model : defaults.default_image_model;
+        $(id).find('option[value=""]').text('自动（' + defModel + '）');
     }
 }
 
 function buildSettingsHtml() {
     const settings = s();
+    const chConf = ch();
+    const defaults = CHANNEL_DEFAULTS[settings.channel] || CHANNEL_DEFAULTS.gemini;
     const ratioOpts = Object.entries(RATIOS).map(([k, v]) => '<option value="' + k + '"' + (settings.ratio === k ? ' selected' : '') + '>' + v + '</option>').join('');
     const qualityOpts = Object.entries(QUALITY_OPTIONS).map(([k, v]) => '<option value="' + k + '"' + (settings.quality === k ? ' selected' : '') + '>' + v + '</option>').join('');
     const html = '<div id="gemini-image-settings" class="inline-drawer">' +
@@ -429,12 +523,16 @@ function buildSettingsHtml() {
         '<div class="inline-drawer-content">' +
             '<div class="gi-row"><label>启用</label><input id="gi-enabled" type="checkbox"' + (settings.enabled ? ' checked' : '') + ' /></div>' +
 
-            '<details class="gi-section"><summary>渠道设置</summary>' +
-                '<div class="gi-row"><label>Gateway</label><input id="gi-api-url" type="text" class="text_pole" value="' + esc(settings.api_url) + '" placeholder="https://example.com" /></div>' +
-                '<div class="gi-row"><label>密钥</label><input id="gi-api-key" type="password" class="text_pole" value="' + esc(settings.api_key) + '" placeholder="API Key 或面板密码" /></div>' +
+            '<details class="gi-section" open><summary>渠道设置</summary>' +
+                '<div class="gi-row"><label>渠道</label><select id="gi-channel" class="text_pole">' +
+                    '<option value="gemini"' + (settings.channel === 'gemini' ? ' selected' : '') + '>Gemini（gateway）</option>' +
+                    '<option value="grok"' + (settings.channel === 'grok' ? ' selected' : '') + '>Grok（grok2api）</option>' +
+                '</select></div>' +
+                '<div class="gi-row"><label>Gateway</label><input id="gi-api-url" type="text" class="text_pole" value="' + esc(chConf.api_url) + '" placeholder="https://example.com" /></div>' +
+                '<div class="gi-row"><label>密钥</label><input id="gi-api-key" type="password" class="text_pole" value="' + esc(chConf.api_key) + '" placeholder="API Key 或面板密码" /></div>' +
                 '<div class="gi-row" style="margin-top:4px"><button id="gi-fetch-models" class="menu_button"><i class="fa-solid fa-arrows-rotate"></i> 拉取模型</button></div>' +
-                '<div class="gi-row"><label>Prompt 模型</label><select id="gi-prompt-model" class="text_pole"><option value="">自动（gemini-3.0-flash）</option></select></div>' +
-                '<div class="gi-row"><label>图像模型</label><select id="gi-image-model" class="text_pole"><option value="">自动（gemini-3.0-flash）</option></select></div>' +
+                '<div class="gi-row"><label>Prompt 模型</label><select id="gi-prompt-model" class="text_pole"><option value="">自动（' + defaults.default_prompt_model + '）</option></select></div>' +
+                '<div class="gi-row"><label>图像模型</label><select id="gi-image-model" class="text_pole"><option value="">自动（' + defaults.default_image_model + '）</option></select></div>' +
             '</details>' +
 
             '<hr>' +
@@ -442,6 +540,10 @@ function buildSettingsHtml() {
             '<div class="gi-row"><label>比例</label><select id="gi-ratio" class="text_pole">' + ratioOpts + '</select></div>' +
             '<div class="gi-row"><label>质量</label><select id="gi-quality" class="text_pole">' + qualityOpts + '</select></div>' +
             '<div class="gi-row"><label>自定义风格</label><input id="gi-custom-style" type="text" class="text_pole" value="' + esc(settings.custom_style) + '" placeholder="soft lighting, pastel colors" /></div>' +
+
+            '<hr>' +
+            '<div class="gi-row" style="flex-direction:column;align-items:stretch"><label>生图引导词 <small style="color:#888">（拼在每次生图 prompt 前面）</small></label>' +
+                '<textarea id="gi-image-guide" class="text_pole" rows="3" placeholder="例：你是天才画家，擅长捕捉...">' + esc(settings.image_guide) + '</textarea></div>' +
 
             '<hr>' +
             '<div class="gi-row"><label class="gi-checkbox-label"><input id="gi-optimize-prompt" type="checkbox"' + (settings.optimize_prompt ? ' checked' : '') + ' /> Prompt 优化</label><small>关键词→叙述式段落，更慢但更细腻</small></div>' +
@@ -472,18 +574,40 @@ function buildSettingsHtml() {
 
     const bind = (id, key, ev) => { $('#' + id).on(ev || 'input', function() { settings[key] = this.type === 'checkbox' ? this.checked : this.value.trim(); saveSettingsDebounced(); }); };
     bind('gi-enabled', 'enabled', 'change');
-    bind('gi-api-url', 'api_url');
-    bind('gi-api-key', 'api_key');
     bind('gi-ratio', 'ratio', 'change');
     bind('gi-quality', 'quality', 'change');
     bind('gi-custom-style', 'custom_style');
     bind('gi-optimize-prompt', 'optimize_prompt', 'change');
     bind('gi-auto', 'auto_generate', 'change');
+    bind('gi-image-guide', 'image_guide');
     bind('gi-extract-prompt', 'extract_prompt');
 
+    // 渠道切换
+    $('#gi-channel').on('change', function () {
+        settings.channel = this.value;
+        saveSettingsDebounced();
+        refreshChannelUI();
+        // 自动拉取新渠道的模型
+        const newCh = ch();
+        if (newCh.api_url && newCh.api_key) {
+            fetchModels().then(models => { populateModelSelects(models); }).catch(() => {});
+        }
+    });
+
+    // 渠道内配置绑定到当前渠道对象
+    const bindCh = (id, key, ev) => {
+        $('#' + id).on(ev || 'input', function () {
+            const chConf = ch();
+            chConf[key] = this.value.trim();
+            saveSettingsDebounced();
+        });
+    };
+    bindCh('gi-api-url', 'api_url');
+    bindCh('gi-api-key', 'api_key');
+
     $('#gi-style').on('change', function () { settings.style = this.value; saveSettingsDebounced(); });
-    $('#gi-prompt-model').on('change', function () { settings.prompt_model = this.value; saveSettingsDebounced(); });
-    $('#gi-image-model').on('change', function () { settings.image_model = this.value; saveSettingsDebounced(); });
+    $('#gi-prompt-model').on('change', function () { ch().prompt_model = this.value; saveSettingsDebounced(); });
+    $('#gi-image-model').on('change', function () { ch().image_model = this.value; saveSettingsDebounced(); });
 
     $('#gi-fetch-models').on('click', async () => {
         try {
@@ -559,7 +683,8 @@ jQuery(async () => {
         // 自动拉取模型列表（有缓存就先用缓存，后台静默刷新）
         const settings = s();
         if (settings._cached_models?.length) populateModelSelects(settings._cached_models);
-        if (settings.api_url && settings.api_key) {
+        const chConf = ch();
+        if (chConf.api_url && chConf.api_key) {
             fetchModels().then(models => {
                 settings._cached_models = models;
                 saveSettingsDebounced();
@@ -578,7 +703,8 @@ jQuery(async () => {
             const ctx = getContext();
 
             // 自动生图：只对新增的 AI 回复触发（+1 才是真正的新消息，跳跃说明切了角色）
-            if (settings.enabled && settings.auto_generate && settings.api_url && settings.api_key) {
+            const chConf = ch();
+            if (settings.enabled && settings.auto_generate && chConf.api_url && chConf.api_key) {
                 if (ctx.chat.length === lastLen + 1) {
                     const last = ctx.chat[ctx.chat.length - 1];
                     if (!last.is_user && !hasImageForCurrentSwipe(last)) { generateAndAttach(ctx.chat.length - 1); }
