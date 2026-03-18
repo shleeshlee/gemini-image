@@ -139,7 +139,7 @@ const defaultSettings = {
     custom_styles: [],
     optimize_prompt: false,
     image_guide: '',
-    extract_prompt: 'Based on the following story/dialogue scene, extract key visual elements for image generation. Output a concise English image prompt (max 150 words) describing the scene, characters, actions, and environment. Focus on visual details only.\n\nScene:\n{{text}}\n\nImage prompt:',
+    extract_prompt: 'Extract visual elements from this story scene for image generation.\n\nThe input may have two parts:\n- [Context]: AI\'s internal thinking — contains story recap and plot direction, use it to understand WHO the characters are and WHAT is happening\n- [Scene]: The actual story text — extract the visual moment from here\n\nOutput a concise English image prompt (max 150 words) describing:\n- Characters: appearance, expression, pose, clothing\n- Action: what is happening in this moment\n- Environment: location, time of day, weather, key objects\n\nDo NOT specify art style, rendering technique, lighting method, or color palette — these are controlled separately.\nOutput ONLY the image prompt, nothing else.\n\n{{text}}',
 };
 
 function loadSettings() {
@@ -258,9 +258,25 @@ async function fetchModels() {
     return (data.data || []).map(m => m.id);
 }
 
+function extractSceneText(html) {
+    // Extract think chain (contains story recap + plot direction — most valuable for scene understanding)
+    const thinkMatch = html.match(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/i);
+    const thinkText = thinkMatch ? thinkMatch[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : '';
+
+    // Extract main body (everything outside think tags, strip HTML)
+    const bodyHtml = html.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '');
+    const bodyText = bodyHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // Combine: think chain (context) + body (scene content)
+    const parts = [];
+    if (thinkText) parts.push('[Context]\n' + thinkText.slice(0, 1000));
+    if (bodyText) parts.push('[Scene]\n' + bodyText.slice(0, 1500));
+    return parts.join('\n\n') || bodyText.slice(0, 2000);
+}
+
 async function extractKeywords(sceneText) {
     const settings = s();
-    const prompt = settings.extract_prompt.replace('{{text}}', sceneText.slice(-800));
+    const prompt = settings.extract_prompt.replace('{{text}}', sceneText);
     const data = await gatewayFetch('/v1/chat/completions', {
         model: getModel('prompt'),
         messages: [{ role: 'user', content: prompt }],
@@ -484,7 +500,7 @@ async function generateAndAttach(messageIndex) {
         const mesEl = $(".mes[mesid=\"" + messageIndex + "\"]");
         mesEl.find('.gi-image-block').remove();
 
-        const sceneText = message.mes.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        const sceneText = extractSceneText(message.mes);
         if (sceneText.length < 10) return;
         _setMsgStatus(messageIndex, 'pending', '🔍 提取关键词...');
         setStatus('', '🔍 #' + messageIndex + ' 提取关键词...');
