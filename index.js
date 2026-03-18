@@ -55,6 +55,56 @@ const STYLES = {
     'Soft Anime': 'Soft Anime / 柔和动漫',
 };
 
+// Style prompt descriptors — applied client-side so the extension works with any backend
+// Each style has prefix (before content) and suffix (after content)
+const STYLE_PROMPTS = {
+    'Monochrome': {prefix: 'Monochrome style, black and white with dramatic contrast', suffix: 'deep shadows and bright highlights, film noir aesthetic, highly detailed'},
+    'Color Block': {prefix: 'Color Block style, bold flat areas of saturated color, graphic design inspired', suffix: 'strong geometric shapes, clean edges, highly detailed'},
+    'Runway': {prefix: 'Fashion runway style, high-fashion editorial look', suffix: 'dramatic poses, luxury aesthetic, magazine quality, highly detailed'},
+    'Screen Print': {prefix: 'Screen print style, Andy Warhol inspired, halftone dots', suffix: 'limited color palette, pop art aesthetic, bold graphic quality'},
+    'Colorful': {prefix: 'Extremely colorful and vibrant, rainbow palette', suffix: 'maximum saturation, joyful and energetic, highly detailed'},
+    'Gothic Clay': {prefix: 'Gothic claymation style, stop-motion clay figures', suffix: 'dark and eerie, Tim Burton inspired, textured surfaces, highly detailed'},
+    'Explosive': {prefix: 'Explosive action style, dramatic impact', suffix: 'debris and particles, high-energy dynamic composition, cinematic lighting, highly detailed'},
+    'Salon': {prefix: 'Salon portrait style, elegant and refined', suffix: 'soft glamour lighting, classic beauty photography, smooth skin texture, highly detailed'},
+    'Sketch': {prefix: 'Detailed pencil sketch on paper, graphite shading', suffix: 'fine crosshatch linework, hand-drawn feel, visible paper texture'},
+    'Cinematic': {prefix: 'Cinematic style, movie still aesthetic, dramatic Rembrandt lighting', suffix: 'anamorphic lens feel, volumetric light rays, film grain, atmospheric haze, highly detailed'},
+    'Steampunk': {prefix: 'Steampunk style, Victorian-era machinery', suffix: 'brass gears and pipes, industrial revolution meets fantasy, warm amber lighting, highly detailed'},
+    'Sunrise': {prefix: 'Golden sunrise style, warm golden hour light', suffix: 'long shadows, atmospheric haze, serene and hopeful mood, highly detailed'},
+    'Myth Fighter': {prefix: 'Epic mythological warrior style, ancient Greek/Norse aesthetic', suffix: 'dramatic battle poses, ornate armor, heroic composition, cinematic lighting, highly detailed'},
+    'Surreal': {prefix: 'Surrealist style, Salvador Dali inspired', suffix: 'impossible geometry, dreamlike distortions, melting forms, ethereal lighting'},
+    'Dark': {prefix: 'Dark moody style, deep shadows, minimal cold lighting', suffix: 'noir atmosphere, misty volumetric haze, subtle rim light on edges, mysterious and brooding, highly detailed'},
+    'Enamel Pin': {prefix: 'Enamel pin style, flat vector illustration, bold outlines', suffix: 'limited colors, cute collectible aesthetic, clean graphic quality'},
+    'Cyborg': {prefix: 'Cyborg style, human-machine hybrid, visible circuitry', suffix: 'bioluminescent elements, sci-fi realism, cold blue rim lighting, highly detailed'},
+    'Soft Portrait': {prefix: 'Soft portrait style, gentle diffused lighting, shallow depth of field', suffix: 'warm skin tones, smooth skin texture, dreamy bokeh highlights, intimate atmosphere, highly detailed'},
+    'Retro Cartoon': {prefix: '1930s retro cartoon style, rubber hose animation', suffix: 'black and white with halftone, Fleischer Studios inspired, playful and nostalgic'},
+    'Oil Painting': {prefix: 'Oil painting style, rich impasto brushstrokes, semi-painterly rendering', suffix: 'Rembrandt-style golden lighting, classical composition, visible canvas texture, museum quality, highly detailed'},
+    'Anime': {prefix: 'High-quality digital anime illustration with refined lineart and confident varied line weight, elegant anime proportions with large expressive eyes featuring layered catchlights and iris detail', suffix: 'soft cel-shading with smooth gradient blending, refined facial features, graceful slender hands, silky hair with highlight streaks, cinematic lighting, soft shadows'},
+    'Photorealistic': {prefix: 'Photorealistic, ultra detailed like a DSLR photograph', suffix: 'natural lighting, sharp focus, 85mm lens, shallow depth of field, highly detailed'},
+    'Watercolor': {prefix: 'Detailed watercolor painting, soft translucent washes', suffix: 'visible paper texture, gentle color bleeding, warm tyndall effect lighting, delicate brushwork, highly detailed'},
+    'Pixel Art': {prefix: 'Pixel art style, retro 16-bit video game aesthetic', suffix: 'clean pixel boundaries, limited palette, nostalgic, charming'},
+    'Kawaii': {prefix: 'Kawaii style, adorable chibi proportions, pastel colors', suffix: 'round soft shapes, sparkles and hearts, cute and expressive'},
+    'Ghibli': {prefix: 'High-quality anime illustration with pseudo-painterly rendering and semi-thick brush strokes, refined anime proportions with expressive eyes and soft facial features', suffix: 'vivid color grading with warm natural tones, expressive shadows with soft textured lighting, silky hair with natural highlight streaks, painterly anime background with atmospheric depth, dramatic atmosphere'},
+    'Civilization': {prefix: 'Ancient civilization epic style, grand architecture', suffix: 'marble and gold, historical drama aesthetic, cinematic lighting, highly detailed'},
+    'Metallic': {prefix: 'Metallic chrome style, reflective surfaces, liquid metal', suffix: 'futuristic industrial aesthetic, cold blue lighting, highly detailed'},
+    'Memo': {prefix: 'Memo style, playful and expressive, close-up character study', suffix: 'natural and candid feel, warm soft lighting, highly detailed'},
+    'Glam': {prefix: 'Glamorous style, sparkle and shine, luxury fashion', suffix: 'dramatic beauty lighting, editorial elegance, highly detailed'},
+    'Crochet': {prefix: 'Crochet knitted style, soft yarn textures', suffix: 'handcrafted warmth, cozy stop-motion aesthetic, soft lighting, highly detailed'},
+    'Cyberpunk': {prefix: 'Cyberpunk style, neon-lit streets, holographic signs', suffix: 'rain reflections, futuristic dystopia, volumetric neon lighting, highly detailed'},
+    'Video Game': {prefix: 'Retro video game style, pixel art animation', suffix: '8-bit/16-bit aesthetic, arcade feel, nostalgic'},
+    'Cosmos': {prefix: 'Cosmic space style, nebulae and stars, infinite depth', suffix: 'astronomical wonder, sci-fi grandeur, ethereal lighting, highly detailed'},
+    'Action Hero': {prefix: 'Action hero blockbuster style, intense close-ups', suffix: 'dramatic slow motion, gritty and cinematic, volumetric lighting, highly detailed'},
+    'Stardust': {prefix: 'Stardust fairy tale style, magical sparkles', suffix: 'enchanted garden, soft dreamy atmosphere, romantic fantasy, ethereal glow, highly detailed'},
+    'Jellytoon': {prefix: 'Jellytoon style, 3D animated character, soft rounded forms', suffix: 'vibrant Pixar-like aesthetic, cute and expressive, soft studio lighting'},
+    'Racetrack': {prefix: 'Racetrack style, miniature tilt-shift effect', suffix: 'toy-like world, bright saturated colors, playful perspective'},
+    'ASMR Apple': {prefix: 'ASMR macro style, extreme close-up detail', suffix: 'satisfying textures, crisp focus, sensory-rich, highly detailed'},
+    'Red Carpet': {prefix: 'Red carpet documentary style, paparazzi flash', suffix: 'celebrity glamour, dramatic entrances, cinematic, highly detailed'},
+    'Popcorn': {prefix: 'Popcorn fun style, playful stop-motion', suffix: 'whimsical food art, creative and surprising compositions'},
+    'Otome CG': {prefix: 'High-quality otome game CG illustration with refined lineart and delicate tapered strokes, elegant bishoujo anime proportions with large expressive eyes featuring complex layered irises and bright catchlights, refined soft facial features', suffix: 'smooth digital cel-shading with warm peach and cool blue accents, silky fine-line hair highlights with glossy sheen, smooth airbrushed skin rendering, tyndall effect lighting, sentimental romantic atmosphere with shallow depth-of-field, elegant jewelry and fabric details'},
+    'Fantasy Anime': {prefix: 'High-quality fantasy anime illustration with refined lineart and varied line weights, elegant anime proportions with large detailed eyes featuring layered catchlights, refined facial features, graceful slender gestures', suffix: 'soft watercolor-like coloring with desaturated pastel tones and subtle color bleeding, ethereal diffused lighting with soft bloom effect, floating particles and magical light motes, lush fully-realized fantasy environment with atmospheric depth and dreamy haze'},
+    'Shinkai': {prefix: 'High-quality digital anime illustration with crisp refined lineart and delicate tapered ends, thin internal detailing and slightly weighted outer silhouettes, elegant anime proportions with large intensely detailed eyes featuring complex iris patterns and multiple catchlights', suffix: 'saturated palette with vivid cold-warm color grading, smooth digital gradients with soft-edged cel-shading, dramatic cinematic rim lighting with subtle bloom effect, silky hair with sharp high-contrast highlights, luminous transparent sky with detailed cloud layers and sunlight rays piercing through, wistful and nostalgic atmosphere'},
+    'Soft Anime': {prefix: 'High-quality digital anime illustration with soft watercolor aesthetic, refined sketchy lineart with varied line weights and delicate tapered strokes blending into soft coloring, elegant bishoujo anime proportions with large expressive eyes featuring complex layered irises and bright catchlights', suffix: 'desaturated pastel palette with gentle wet-on-wet transitions and subtle color bleeding, light cel-shading with warm peach and cool blue shadow accents, soft diffused ambient light with ethereal high-key glow, traditional watercolor paper grain texture, silky fine-line hair highlights, minimalist airy storybook atmosphere with floating particles'},
+};
+
 const RATIOS = {
     '1024x1024': '1:1 正方形',
     '1280x720': '16:9 横屏',
@@ -228,7 +278,7 @@ async function optimizePrompt(prompt) {
         messages: [
             {
                 role: 'system',
-                content: 'You are an image prompt optimizer for Google Gemini. Expand the user\'s brief description into a vivid scene description. ONLY enrich the CONTENT: subject, action, pose, expression, clothing, environment, spatial relationships, textures, materials, weather, time of day. Do NOT specify art style, rendering technique, camera/lens, lighting technique, color palette, or quality boosters — these are controlled separately. 100 words max. Output ONLY the optimized prompt.',
+                content: 'You are an image prompt optimizer. Expand the user\'s brief description into a vivid scene description. ONLY enrich the CONTENT: subject, action, pose, expression, clothing, environment, spatial relationships, textures, materials, weather, time of day. Do NOT specify art style, rendering technique, camera/lens, lighting technique, color palette, or quality boosters — these are controlled separately. 100 words max. Output ONLY the optimized prompt.',
             },
             { role: 'user', content: prompt },
         ],
@@ -275,13 +325,18 @@ async function generateImage(prompt) {
         finalPrompt = settings.image_guide.trim() + '\n\n' + finalPrompt;
     }
 
-    // 风格处理
+    // 风格处理 — 前端拼接 prefix/suffix，兼容任何后端
     const styleKey = settings.style;
     if (styleKey !== 'none') {
         if (styleKey.startsWith('custom:')) {
             const customName = styleKey.replace('custom:', '');
             const found = (settings.custom_styles || []).find(cs => cs.name === customName);
             if (found) finalPrompt = found.description + ', ' + finalPrompt;
+        } else {
+            const sp = STYLE_PROMPTS[styleKey];
+            if (sp) {
+                finalPrompt = sp.prefix + '. ' + finalPrompt + '. ' + sp.suffix;
+            }
         }
     }
     if (settings.custom_style) {
@@ -296,11 +351,6 @@ async function generateImage(prompt) {
         size: settings.ratio,
         response_format: 'b64_json',
     };
-
-    // 内置风格通过 style 字段传给后端
-    if (styleKey !== 'none' && !styleKey.startsWith('custom:')) {
-        body.style = styleKey;
-    }
 
     const data = await gatewayFetch('/v1/images/generations', body);
 
